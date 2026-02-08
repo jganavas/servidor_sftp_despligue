@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Práctica SFTP</title>
+    <meta name="description" content="Gestor de archivos WebDAV">
+    <link rel="icon" href="favicon.ico">
+    <link rel="shortcut icon" href="favicon.ico">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 5px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .content { padding: 30px; }
+        .upload-zone {
+            border: 3px dashed #ddd;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 30px;
+        }
+        .upload-zone:hover { border-color: #667eea; background: #f8f9ff; }
+        .upload-zone.dragover { border-color: #667eea; background: #f0f2ff; }
+        input[type="file"] { display: none; }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: transform 0.2s;
+        }
+        .btn:hover { transform: translateY(-2px); }
+        .file-list {
+            list-style: none;
+            margin-top: 20px;
+        }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            transition: background 0.2s;
+        }
+        .file-item:hover { background: #f8f9fa; }
+        .file-name {
+            flex: 1;
+            font-weight: 500;
+            color: #333;
+            cursor: pointer;
+        }
+        .file-name:hover {
+            color: #667eea;
+            text-decoration: underline;
+        }
+        .file-size {
+            color: #888;
+            font-size: 14px;
+            margin-right: 15px;
+        }
+        .delete-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        .delete-btn:hover { background: #c82333; }
+        .download-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 6px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .download-btn:hover { background: #218838; }
+        .status {
+            padding: 12px;
+            margin-bottom: 20px;
+            border-radius: 6px;
+            display: none;
+        }
+        .status.success { background: #d4edda; color: #155724; display: block; }
+        .status.error { background: #f8d7da; color: #721c24; display: block; }
+        .upload-icon { font-size: 50px; margin-bottom: 15px; }
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 10px;
+            display: none;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📁 Servidor SFTP gitano 🔥🔥🔥</h1>
+            <p>Arrastra archivos o haz clic para subir</p>
+        </div>
+        <div class="content">
+            <div id="status" class="status"></div>
+            
+            <div class="upload-zone" id="dropZone">
+                <div class="upload-icon">☁️</div>
+                <h3>Arrastra archivos aquí</h3>
+                <p style="color: #888; margin-top: 10px;">o haz clic para seleccionar</p>
+                <input type="file" id="fileInput" multiple>
+            </div>
+            
+            <div class="progress-bar" id="progressBar">
+                <div class="progress-bar-fill" id="progressBarFill"></div>
+            </div>
+
+            <h3 style="margin-bottom: 15px;">📂 Archivos</h3>
+            <ul class="file-list" id="fileList">
+                <li class="file-item">
+                    <span class="file-name">Cargando archivos...</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+        const status = document.getElementById('status');
+        const progressBar = document.getElementById('progressBar');
+        const progressBarFill = document.getElementById('progressBarFill');
+
+        // Credenciales (en producción deberían pedirse por login)
+        let credentials = null;
+
+        // Click en zona de subida
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        // Prevenir comportamiento por defecto del drag & drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Efectos visuales del drag & drop
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.remove('dragover');
+            });
+        });
+
+        // Manejar archivos soltados
+        dropZone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            handleFiles(files);
+        });
+
+        // Manejar archivos seleccionados
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        async function handleFiles(files) {
+            if (!credentials) {
+                credentials = prompt('Ingresa credenciales (usuario:contraseña):');
+                if (!credentials) return;
+            }
+
+            progressBar.style.display = 'block';
+            const totalFiles = files.length;
+            let uploaded = 0;
+
+            for (const file of files) {
+                try {
+                    await uploadFile(file);
+                    uploaded++;
+                    progressBarFill.style.width = `${(uploaded / totalFiles) * 100}%`;
+                } catch (error) {
+                    showStatus(`Error subiendo ${file.name}: ${error.message}`, 'error');
+                }
+            }
+
+            progressBar.style.display = 'none';
+            progressBarFill.style.width = '0%';
+            showStatus(`${uploaded} archivo(s) subido(s) correctamente`, 'success');
+            loadFiles();
+            fileInput.value = '';
+        }
+
+        async function uploadFile(file) {
+            const response = await fetch(`/files/${file.name}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': 'Basic ' + btoa(credentials)
+                },
+                body: file
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        }
+
+        async function deleteFile(filename) {
+            if (!confirm(`¿Eliminar ${filename}?`)) return;
+
+            if (!credentials) {
+                credentials = prompt('Ingresa credenciales (usuario:contraseña):');
+                if (!credentials) return;
+            }
+
+            try {
+                const response = await fetch(`/files/${filename}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': 'Basic ' + btoa(credentials)
+                    }
+                });
+
+                if (response.ok) {
+                    showStatus(`${filename} eliminado correctamente`, 'success');
+                    loadFiles();
+                } else {
+                    showStatus(`Error al eliminar: HTTP ${response.status}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function downloadFile(filename) {
+            if (!credentials) {
+                credentials = prompt('Ingresa credenciales (usuario:contraseña):');
+                if (!credentials) return;
+            }
+
+            try {
+                const response = await fetch(`/files/${filename}`, {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa(credentials)
+                    }
+                });
+
+                if (!response.ok) {
+                    showStatus(`Error al descargar: HTTP ${response.status}`, 'error');
+                    return;
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                showStatus(`${filename} descargado`, 'success');
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadFiles() {
+            if (!credentials) {
+                fileList.innerHTML = `<li class="file-item"><span class="file-name">Ingresa credenciales y sube un archivo para ver la lista</span></li>`;
+                return;
+            }
+
+            try {
+                // Hacer una petición autenticada para obtener el listado de directorio
+                const response = await fetch('/files/', {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa(credentials)
+                    }
+                });
+                
+                if (response.status === 401) {
+                    credentials = null;
+                    fileList.innerHTML = `<li class="file-item"><span class="file-name">Credenciales incorrectas</span></li>`;
+                    return;
+                }
+
+                const html = await response.text();
+                
+                // Parsear el autoindex de nginx
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const links = doc.querySelectorAll('a');
+                
+                const files = [];
+                links.forEach(link => {
+                    const href = link.getAttribute('href');
+                    if (href && href !== '../' && !href.endsWith('/')) {
+                        files.push(decodeURIComponent(href));
+                    }
+                });
+
+                displayFiles(files);
+            } catch (error) {
+                fileList.innerHTML = `<li class="file-item"><span class="file-name">Cargando... (${error.message})</span></li>`;
+            }
+        }
+
+        function displayFiles(files) {
+            if (files.length === 0) {
+                fileList.innerHTML = `<li class="file-item"><span class="file-name">No hay archivos</span></li>`;
+                return;
+            }
+
+            fileList.innerHTML = files.map(file => `
+                <li class="file-item">
+                    <span class="file-name" onclick="downloadFile('${file}')">📄 ${file}</span>
+                    <button class="download-btn" onclick="downloadFile('${file}')">⬇️ Descargar</button>
+                    <button class="delete-btn" onclick="deleteFile('${file}')">🗑️ Eliminar</button>
+                </li>
+            `).join('');
+        }
+
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = `status ${type}`;
+            setTimeout(() => {
+                status.className = 'status';
+            }, 5000);
+        }
+
+        // Cargar archivos al iniciar
+        loadFiles();
+    </script>
+</body>
+</html>

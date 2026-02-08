@@ -11,3 +11,13 @@ services:
       alumno2:Alumno123:1001:1001:/data/alumno2
       profesor:Profe123:1002:1002:/data/profesor
     restart: unless-stopped
+
+  webdav:
+    build: ./webdav
+    container_name: t4-webdav
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data/webdav/documentos:/data
+    restart: unless-stopped
+
