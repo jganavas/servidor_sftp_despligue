@@ -10,6 +10,7 @@ RUN mkdir -p /data /tmp/client_body_temp
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY htpasswd /etc/nginx/htpasswd
 COPY index.html /data/index.html
+COPY Emoji_u1f525.svg.png /data/Emoji_u1f525.svg.png
 
 # Dar permisos
 RUN chmod 644 /etc/nginx/htpasswd

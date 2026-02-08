@@ -18,6 +18,6 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data/webdav/documentos:/data
+      - ./data/webdav/files:/data/files
     restart: unless-stopped
 
